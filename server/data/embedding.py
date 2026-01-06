@@ -21,8 +21,8 @@ index = faiss.IndexFlatIP(dimension)
 index.add(embeddings.astype('float32'))
 
 # lưu Index và Metadata để dùng sau
-faiss.write_index(index, "vifactcheck.index")
-with open("metadata.pkl", "wb") as f:
+faiss.write_index(index, "vectordb/vifactcheck.index")
+with open("vectordb/metadata.pkl", "wb") as f:
     pickle.dump(ds, f) # Lưu lại dataset để lấy thông tin chi tiết khi search trúng
 
 print("Đã lưu Index thành công")

@@ -3,7 +3,7 @@ import pickle
 from FlagEmbedding import BGEM3FlagModel
 
 class FactCheckSearcher:
-    def __init__(self, index_path="vifactcheck.index", metadata_path="metadata.pkl"):
+    def __init__(self, index_path="vectordb/vifactcheck.index", metadata_path="vectordb/metadata.pkl"):
         # load model
         self.model = BGEM3FlagModel('BAAI/bge-m3', use_fp16=True)
         # load index
