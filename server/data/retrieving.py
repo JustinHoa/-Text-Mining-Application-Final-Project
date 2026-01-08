@@ -1,54 +1,67 @@
-import faiss
-import pickle
+from qdrant_client import QdrantClient, models
 from FlagEmbedding import BGEM3FlagModel
+import sys
 
 class FactCheckSearcher:
-    def __init__(self, index_path="vectordb/vifactcheck.index", metadata_path="vectordb/metadata.pkl"):
-        # load model
+    def __init__(self, db_path="vectordb", collection_name="vifactcheck"):
+        print(f"Kết nối với DB tại: {db_path}")
+        self.client = QdrantClient(path=db_path)
+        self.collection_name = collection_name
+        
+        print("Load model BGE-M3...")
         self.model = BGEM3FlagModel('BAAI/bge-m3', use_fp16=True)
-        # load index
-        self.index = faiss.read_index(index_path)
-        # load metadata
-        with open(metadata_path, "rb") as f:
-            self.metadata = pickle.load(f)
-            
+
     def search(self, query, k=3, threshold=0.45):
-        """
-        query: Câu nhập vào
-        k: Số lượng kết quả tối đa
-        threshold: Ngưỡng độ tương đồng (0.0 đến 1.0). 
-                   Nếu score thấp hơn ngưỡng này sẽ coi như không thấy.
-        """
-        # embed query
-        query_vec = self.model.encode([query], return_dense=True)['dense_vecs']
-        
-        # search trong FAISS
-        scores, indices = self.index.search(query_vec.astype('float32'), k)
-        
-        results = []
-        for score, idx in zip(scores[0], indices[0]):
-            # kiểm tra nếu score threshold mới lấy
-            if score >= threshold:
-                item = self.metadata[int(idx)]
+        try:
+            query_vec = self.model.encode(
+                [query],
+                return_dense=True
+            )["dense_vecs"][0]
+
+            search_result = self.client.query_points(
+                collection_name=self.collection_name,
+                query=query_vec.tolist(),
+                limit=k,
+                score_threshold=threshold,
+                with_payload=True
+            )
+
+            results = []
+            for hit in search_result.points:
                 results.append({
-                    "score": float(score),
-                    "statement": item.get('Statement'),
-                    "evidence": item.get('Evidence'),
-                    "url": item.get('Url'),
-                    "topic": item.get('Topic')
+                    "score": hit.score,
+                    "evidence": hit.payload.get("evidence"),
+                    "statement": hit.payload.get("statement"),
+                    "url": hit.payload.get("url")
                 })
-        
-        return results if len(results) > 0 else None
-    
+
+            return results
+
+        except Exception as e:
+            print(f"Lỗi tìm kiếm: {e}")
+            return []
+    def close(self):
+        self.client.close()
+
 if __name__ == "__main__":
+    searcher = None
     searcher = FactCheckSearcher()
     
-    user_input = "bất động sản"
-    output = searcher.search(user_input, k=2, threshold=0.5)
+    user_input = "Phó thủ tướng Trần Hồng Hà chúc mừng đài truyền hình"
+    print(f"\nQuery: '{user_input}'")
     
-    if output:
-        print(f"Tìm thấy {len(output)} kết quả:")
-        for res in output:
-            print(f"[{res['score']:.4f}] - {res['evidence']}")
-    else:
-        print("Không tìm thấy nội dung nào phù hợp.")
+    try:
+        output = searcher.search(user_input, k=2, threshold=0.4)
+        
+        if output:
+            print(f"Tìm thấy {len(output)} kết quả:")
+            for res in output:
+                print("-" * 50)
+                print(f"Score: {res['score']:.4f}")
+                print(f"Evidence: {res['evidence']}")
+        else:
+            print("Không tìm thấy kết quả nào đủ giống.")
+    finally:
+        if searcher:
+            searcher.close()
+        
